@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import Layout from "../components/Layout";
+import { useGetAllUsersQuery } from "../services/backendApi";
 
 function Users() {
   const [users, setUsers] = useState([]);
@@ -9,17 +10,30 @@ function Users() {
   const [formData, setFormData] = useState({});
   const [currentPage, setCurrentPage] = useState(1);
 
+  const {
+    data: allUsers,
+    isLoading,
+    isError,
+    error,
+  } = useGetAllUsersQuery();
+
+  console.log("All Users:", allUsers);
+
   const usersPerPage = 5;
 
   useEffect(() => {
-    const storedUsers = JSON.parse(localStorage.getItem("users")) || [];
-    setUsers(storedUsers);
-  }, []);
+    if (!allUsers) return;
 
-  const saveUsers = (updatedUsers) => {
-    setUsers(updatedUsers);
-    localStorage.setItem("users", JSON.stringify(updatedUsers));
-  };
+    const apiUsers = Array.isArray(allUsers)
+      ? allUsers
+      : Array.isArray(allUsers?.users)
+      ? allUsers.users
+      : [];
+
+    setUsers(apiUsers);
+  }, [allUsers]);
+
+  const getUserId = (user) => user?.id || user?._id;
 
   const filteredUsers = useMemo(() => {
     const s = search.toLowerCase();
@@ -52,11 +66,11 @@ function Users() {
   const paginatedUsers = filteredUsers.slice(startIndex, startIndex + usersPerPage);
 
   const handleDelete = (id) => {
-    const updated = users.filter((u) => u.id !== id);
-    saveUsers(updated);
+    const updated = users.filter((u) => getUserId(u) !== id);
+    setUsers(updated);
 
-    if (viewUser?.id === id) setViewUser(null);
-    if (editUser?.id === id) {
+    if (getUserId(viewUser) === id) setViewUser(null);
+    if (getUserId(editUser) === id) {
       setEditUser(null);
       setFormData({});
     }
@@ -64,7 +78,7 @@ function Users() {
 
   const toggleApproval = (id) => {
     const updated = users.map((u) =>
-      u.id === id
+      getUserId(u) === id
         ? {
             ...u,
             selfieVerification: {
@@ -78,15 +92,15 @@ function Users() {
         : u
     );
 
-    saveUsers(updated);
+    setUsers(updated);
 
-    if (viewUser?.id === id) {
-      const updatedUser = updated.find((u) => u.id === id);
+    if (getUserId(viewUser) === id) {
+      const updatedUser = updated.find((u) => getUserId(u) === id);
       setViewUser(updatedUser || null);
     }
 
-    if (editUser?.id === id) {
-      const updatedUser = updated.find((u) => u.id === id);
+    if (getUserId(editUser) === id) {
+      const updatedUser = updated.find((u) => getUserId(u) === id);
       setEditUser(updatedUser || null);
       setFormData(updatedUser || {});
     }
@@ -137,7 +151,7 @@ function Users() {
     if (!editUser) return;
 
     const updated = users.map((u) =>
-      u.id === editUser.id
+      getUserId(u) === getUserId(editUser)
         ? {
             ...u,
             ...formData,
@@ -146,7 +160,7 @@ function Users() {
         : u
     );
 
-    saveUsers(updated);
+    setUsers(updated);
     setEditUser(null);
     setFormData({});
   };
@@ -182,9 +196,24 @@ function Users() {
               </thead>
 
               <tbody>
-                {paginatedUsers.length > 0 ? (
-                  paginatedUsers.map((user) => (
-                    <tr key={user.id} className="border-t border-gray-200">
+                {isLoading ? (
+                  <tr>
+                    <td colSpan="7" className="p-6 text-center text-gray-500">
+                      Loading users...
+                    </td>
+                  </tr>
+                ) : isError ? (
+                  <tr>
+                    <td colSpan="7" className="p-6 text-center text-red-500">
+                      {error?.data?.message || "Failed to load users"}
+                    </td>
+                  </tr>
+                ) : paginatedUsers.length > 0 ? (
+                  paginatedUsers.map((user, index) => {
+                    const userId = getUserId(user);
+
+                    return (
+                    <tr key={userId || `user-row-${index}`} className="border-t border-gray-200">
                       <td className="p-3">{user.fullName || "-"}</td>
                       <td className="p-3">{user.mobileNumber || "-"}</td>
                       <td className="p-3">{user.email || "-"}</td>
@@ -213,12 +242,13 @@ function Users() {
                       <td className="p-3">
                         <div className="flex flex-wrap gap-2">
                           <button
-                            onClick={() => toggleApproval(user.id)}
+                            onClick={() => toggleApproval(userId)}
+                            disabled={!userId}
                             className={`px-3 py-1 text-xs text-white rounded ${
                               user.selfieVerification?.status === "approved"
                                 ? "bg-yellow-500"
                                 : "bg-green-500"
-                            }`}
+                            } disabled:opacity-50 disabled:cursor-not-allowed`}
                           >
                             {user.selfieVerification?.status === "approved"
                               ? "Unapprove"
@@ -240,7 +270,8 @@ function Users() {
                           </button>
 
                           <button
-                            onClick={() => handleDelete(user.id)}
+                            onClick={() => handleDelete(userId)}
+                            disabled={!userId}
                             className="px-3 py-1 text-xs bg-red-500 text-white rounded"
                           >
                             Delete
@@ -248,7 +279,7 @@ function Users() {
                         </div>
                       </td>
                     </tr>
-                  ))
+                  )})
                 ) : (
                   <tr>
                     <td colSpan="7" className="p-6 text-center text-gray-500">
